@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>智能衣櫃管理系統</title>
+    <title>阿倫的智能衣櫃管理系統</title>
     <!-- 載入 Tailwind CSS -->
     <script src="https://cdn.tailwindcss.com"></script>
     <!-- 載入 Lucide Icons -->
@@ -112,7 +112,7 @@
             // State for outfit planner
             const [selectedItems, setSelectedItems] = useState({});
             const [newOutfitName, setNewOutfitName] = useState('');
-
+            
             // --- Firebase Initialization and Authentication ---
             useEffect(() => {
                 const initializeFirebase = async () => {
@@ -141,10 +141,8 @@
                             if (!user) {
                                 try {
                                     if (initialAuthToken) {
-                                        // 僅在有 Canvas 提供的 Token 時才使用 CustomToken 登入
                                         await signInWithCustomToken(authInstance, initialAuthToken);
                                     } else {
-                                        // 否則，使用匿名登入 (這是本地運行的預期登入方式)
                                         await signInAnonymously(authInstance);
                                     }
                                 } catch (e) {
@@ -206,17 +204,24 @@
             }, [db, userId]);
 
             // --- CRUD Operations ---
+            // NOTE: handleAddItem will now use the final name from the local state buffer (inputName)
             const handleAddItem = async (e) => {
                 e.preventDefault();
-                if (!db || !userId || !newItem.name.trim()) return;
+                // We rely on the WardrobeSection local state logic to ensure inputName is up-to-date
+                const form = e.target;
+                const nameInput = form.querySelector('#itemName');
+                const finalName = nameInput ? nameInput.value.trim() : '';
+
+                if (!db || !userId || !finalName) return;
 
                 try {
                     await addDoc(collection(db, getCollectionPath(userId, 'wardrobe_items')), {
                         ...newItem,
-                        name: newItem.name.trim(),
+                        name: finalName, // Use the final value from the input element
                         imageSource: newItem.imageSource.trim(),
                         createdAt: serverTimestamp(),
                     });
+                    // Reset global state for all fields (including name reset handled by WardrobeSection)
                     setNewItem(prev => ({ ...prev, name: '', imageSource: '' }));
                 } catch (e) {
                     // Check for size error (Document too large)
@@ -356,78 +361,101 @@
             );
 
             // --- Tab: Wardrobe Management ---
-            const WardrobeSection = () => (
-                <div className="space-y-6 p-4 md:p-6 bg-white rounded-xl shadow-lg">
-                    <h2 className="text-2xl font-bold text-gray-800 border-b pb-2 mb-4">新增衣物</h2>
-                    
-                    <form onSubmit={handleAddItem} className="grid grid-cols-1 md:grid-cols-3 gap-4 bg-gray-50 p-4 rounded-lg shadow-inner">
-                        
-                        <div>
-                            <label htmlFor="itemName" className="block text-sm font-medium text-gray-700">名稱 <span className="text-red-500">*</span></label>
-                            <input
-                                key="item-name-input" // 這裡新增 key 屬性來穩定輸入框
-                                id="itemName" type="text" required value={newItem.name}
-                                onChange={(e) => setNewItem(prev => ({ ...prev, name: e.target.value }))}
-                                placeholder="例如：藍色牛仔褲"
-                                className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 p-2"
-                            />
-                        </div>
+            const WardrobeSection = () => {
+                // 🌟 NEW: Local state to buffer input name for smooth typing
+                const [inputName, setInputName] = useState(newItem.name);
 
-                        <div>
-                            <label htmlFor="itemCategory" className="block text-sm font-medium text-gray-700">類別</label>
-                            <select
-                                id="itemCategory" value={newItem.category}
-                                onChange={(e) => setNewItem(prev => ({ ...prev, category: e.target.value }))}
-                                className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 p-2"
-                            >
-                                {CATEGORIES.map(cat => <option key={cat} value={cat}>{cat}</option>)}
-                            </select>
-                        </div>
+                useEffect(() => {
+                    // Sync local state when global state (e.g., after successful submission reset) changes
+                    setInputName(newItem.name);
+                }, [newItem.name]);
 
-                        <div>
-                            <label htmlFor="itemColor" className="block text-sm font-medium text-gray-700">顏色</label>
-                            <select
-                                id="itemColor" value={newItem.color}
-                                onChange={(e) => setNewItem(prev => ({ ...prev, color: e.target.value }))}
-                                className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 p-2"
-                            >
-                                {COLORS.map(color => <option key={color} value={color}>{color}</option>)}
-                            </select>
-                        </div>
-                        
-                        <div className="md:col-span-3">
-                            <label htmlFor="imageFile" className="block text-sm font-medium text-gray-700">選擇圖片檔案 (手機/電腦)</label>
-                            <input
-                                id="imageFile" type="file" accept="image/*"
-                                onChange={handleImageUpload}
-                                className="mt-1 block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-indigo-50 file:text-indigo-700 hover:file:bg-indigo-100"
-                            />
-                            <p className="text-xs text-red-600 mt-1">⚠️ **警告：圖片將以 Base64 形式儲存，請確保檔案小於 500KB，避免資料庫儲存失敗。**</p>
-                        </div>
-                        
-                        <div className="md:col-span-3 flex justify-end">
-                            <button
-                                type="submit"
-                                className="px-4 py-2 bg-indigo-600 text-white font-semibold rounded-md shadow-lg hover:bg-indigo-700 transition-colors flex items-center"
-                                disabled={!newItem.name.trim()}
-                            >
-                                <Icon name="Plus" size={18} className="mr-2" /> 新增至衣櫃
-                            </button>
-                        </div>
-                    </form>
+                const handleInputNameChange = (e) => {
+                    setInputName(e.target.value);
+                };
+                
+                const handleInputBlur = () => {
+                    // Sync the value to the global state on blur
+                    setNewItem(prev => ({ ...prev, name: inputName }));
+                };
 
-                    <h2 className="text-2xl font-bold text-gray-800 border-b pb-2 mb-4 mt-8">我的衣物 ({items.length} 件)</h2>
-                    {items.length === 0 ? (
-                        <p className="text-gray-500 text-center py-10 bg-gray-50 rounded-lg shadow-md">衣櫃是空的！請新增一些衣物。</p>
-                    ) : (
-                        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4">
-                            {items.map(item => (
-                                <ItemCard key={item.id} item={item} onDelete={handleDeleteItem} size="lg" />
-                            ))}
-                        </div>
-                    )}
-                </div>
-            );
+                // The handleAddItem function is now defined in the parent App component
+                // We rely on the input's current value being available in the DOM when handleAddItem is called (e.g. via e.target)
+
+                return (
+                    <div className="space-y-6 p-4 md:p-6 bg-white rounded-xl shadow-lg">
+                        <h2 className="text-2xl font-bold text-gray-800 border-b pb-2 mb-4">新增衣物</h2>
+                        
+                        <form onSubmit={handleAddItem} className="grid grid-cols-1 md:grid-cols-3 gap-4 bg-gray-50 p-4 rounded-lg shadow-inner">
+                            
+                            <div>
+                                <label htmlFor="itemName" className="block text-sm font-medium text-gray-700">名稱 <span className="text-red-500">*</span></label>
+                                <input
+                                    id="itemName" type="text" required 
+                                    value={inputName} // 🌟 使用本地狀態值
+                                    onChange={handleInputNameChange} // 🌟 僅更新本地狀態
+                                    onBlur={handleInputBlur} // 🌟 在失去焦點時更新全局狀態
+                                    placeholder="例如：藍色牛仔褲"
+                                    className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 p-2"
+                                />
+                            </div>
+
+                            <div>
+                                <label htmlFor="itemCategory" className="block text-sm font-medium text-gray-700">類別</label>
+                                <select
+                                    id="itemCategory" value={newItem.category}
+                                    onChange={(e) => setNewItem(prev => ({ ...prev, category: e.target.value }))}
+                                    className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 p-2"
+                                >
+                                    {CATEGORIES.map(cat => <option key={cat} value={cat}>{cat}</option>)}
+                                </select>
+                            </div>
+
+                            <div>
+                                <label htmlFor="itemColor" className="block text-sm font-medium text-gray-700">顏色</label>
+                                <select
+                                    id="itemColor" value={newItem.color}
+                                    onChange={(e) => setNewItem(prev => ({ ...prev, color: e.target.value }))}
+                                    className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 p-2"
+                                >
+                                    {COLORS.map(color => <option key={color} value={color}>{color}</option>)}
+                                </select>
+                            </div>
+                            
+                            <div className="md:col-span-3">
+                                <label htmlFor="imageFile" className="block text-sm font-medium text-gray-700">選擇圖片檔案 (手機/電腦)</label>
+                                <input
+                                    id="imageFile" type="file" accept="image/*"
+                                    onChange={handleImageUpload}
+                                    className="mt-1 block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-indigo-50 file:text-indigo-700 hover:file:bg-indigo-100"
+                                />
+                                <p className="text-xs text-red-600 mt-1">⚠️ **警告：圖片將以 Base64 形式儲存，請確保檔案小於 500KB，避免資料庫儲存失敗。**</p>
+                            </div>
+                            
+                            <div className="md:col-span-3 flex justify-end">
+                                <button
+                                    type="submit"
+                                    className="px-4 py-2 bg-indigo-600 text-white font-semibold rounded-md shadow-lg hover:bg-indigo-700 transition-colors flex items-center"
+                                    disabled={!inputName.trim()}
+                                >
+                                    <Icon name="Plus" size={18} className="mr-2" /> 新增至衣櫃
+                                </button>
+                            </div>
+                        </form>
+
+                        <h2 className="text-2xl font-bold text-gray-800 border-b pb-2 mb-4 mt-8">我的衣物 ({items.length} 件)</h2>
+                        {items.length === 0 ? (
+                            <p className="text-gray-500 text-center py-10 bg-gray-50 rounded-lg shadow-md">衣櫃是空的！請新增一些衣物。</p>
+                        ) : (
+                            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4">
+                                {items.map(item => (
+                                    <ItemCard key={item.id} item={item} onDelete={handleDeleteItem} size="lg" />
+                                ))}
+                            </div>
+                        )}
+                    </div>
+                );
+            };
 
             // --- Simplified Planner and Suggestions Sections (for brevity and focus on core change) ---
             const PlannerSection = () => {
